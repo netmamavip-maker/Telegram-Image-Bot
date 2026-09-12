@@ -2,6 +2,6 @@
 __pycache__/
 *.pyc
 *.pyo
-venv/
+bot_memory.json
 .DS_Store
 *.log
