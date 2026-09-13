@@ -174,7 +174,7 @@ class AttackManager:
             except:
                 pass
     
-    def start_attack(self, user_id, target, attack_type, threads=50):
+    def start_attack(self, user_id, target, attack_type, threads=500):
         """অ্যাটাক স্টার্ট করো"""
         try:
             if ':' in target:
@@ -410,7 +410,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "`syn` - TCP SYN Flood (দ্রুততম)\n"
             "`udp` - UDP Flood (লাইটওয়েট)\n"
             "`http` - HTTP GET (অ্যাপ্লিকেশন লেয়ার)\n\n"
-            "**থ্রেড রেঞ্জ:** 1-200 (ডিফল্ট: 50)\n"
+            "**থ্রেড রেঞ্জ:** 500-2000 (ডিফল্ট: 500)\n"
             "বেশি = বেশি লোড",
             parse_mode="Markdown"
         )
@@ -446,18 +446,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         await update.message.reply_text(
             f"✅ টাইপ: `{attack_type}`\n\n"
-            "থ্রেড সংখ্যা? (১-২০০, ডিফল্ট: ৫০)\n"
+            "থ্রেড সংখ্যা? (৫০০-২০০০, ডিফল্ট: ৫০০)\n"
             "সংখ্যা দাও অথবা শুধু 'go' দিয়ে ডিফল্ট ব্যবহার করো",
             parse_mode="Markdown"
         )
     
     elif context.user_data.get('waiting_for_threads'):
-        threads = 50
+        threads = 500
         if text.lower() != 'go':
             try:
                 threads = int(text)
-                if threads < 1 or threads > 200:
-                    await update.message.reply_text("❌ ১-২০০ এর মধ্যে দাও")
+                if threads <500 or threads > 2000:
+                    await update.message.reply_text("❌ ৫০০-২০০০ এর মধ্যে দাও")
                     return
             except ValueError:
                 await update.message.reply_text("❌ সংখ্যা দাও")
@@ -496,7 +496,7 @@ def main():
     
     app.run_polling(
         poll_interval=3.0,
-        timeout=30,
+        timeout=60,
         allowed_updates=Update.ALL_TYPES
     )
 
