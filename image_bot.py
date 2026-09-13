@@ -83,7 +83,6 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "text/plain")
             self.end_headers()
             self.wfile.write(b"OK")
-            logger.info("Health check: OK")
         else:
             self.send_response(404)
             self.end_headers()
@@ -94,10 +93,13 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
 
 def start_health_check():
     """Health Check সার্ভার শুরু করো (ব্যাকগ্রাউন্ডে)"""
-    server = HTTPServer(("0.0.0.0", HEALTH_CHECK_PORT), HealthCheckHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    logger.info(f"🏥 health check server listening on 0.0.0.0:{HEALTH_CHECK_PORT}")
+    try:
+        server = HTTPServer(("0.0.0.0", HEALTH_CHECK_PORT), HealthCheckHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        logger.info(f"🏥 health check server listening on 0.0.0.0:{HEALTH_CHECK_PORT}")
+    except Exception as e:
+        logger.warning(f"Health check server error: {e}")
 
 # টেলিগ্রাম হ্যান্ডলার
 
@@ -254,8 +256,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         prompt = update.message.text
         await generate_image(prompt, user_id, update, context)
 
-async def main():
-    """মেইন ফাংশন"""
+def main():
+    """মেইন ফাংশন — Synchronous wrapper"""
     # Health Check সার্ভার স্টার্ট করো
     start_health_check()
     
@@ -269,21 +271,20 @@ async def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    logger.info("🚀 Waiting for messages… (/start)")
+    logger.info("🚀 Bot polling started (Waiting for messages…)")
     
-    # অ্যাপ ইনিশিয়ালাইজ করো
-    await app.initialize()
-    
-    # Long Polling চালু করো (infinite)
-    await app.updater.start_polling(
+    # Run polling (synchronous, blocking, infinite)
+    app.run_polling(
         poll_interval=3.0,
         timeout=30,
         allowed_updates=Update.ALL_TYPES
     )
 
 if __name__ == "__main__":
-    import asyncio
     try:
-        asyncio.run(main())
+        main()
     except KeyboardInterrupt:
         logger.info("বট বন্ধ হয়েছে")
+    except Exception as e:
+        logger.error(f"Critical error: {e}")
+        raise
