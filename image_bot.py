@@ -2,8 +2,15 @@ import logging
 import os
 import json
 from pathlib import Path
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application, 
+    CommandHandler, 
+    MessageHandler, 
+    CallbackQueryHandler,
+    filters, 
+    ContextTypes
+)
 import requests
 import io
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -26,15 +33,14 @@ HEALTH_CHECK_PORT = PORT
 if not TELEGRAM_BOT_TOKEN or not HF_API_TOKEN:
     raise ValueError("❌ TELEGRAM_BOT_TOKEN এবং HF_API_TOKEN সেট করো")
 
-# মেমরি সিস্টেম
+# মেমরি ফাইল
 MEMORY_FILE = "bot_memory.json"
 
 class BotMemory:
-    """ইউজার মেমরি ম্যানেজার"""
+    """ইউজার মেমরি"""
     
     @staticmethod
     def load():
-        """মেমরি লোড করো"""
         if Path(MEMORY_FILE).exists():
             try:
                 with open(MEMORY_FILE, 'r', encoding='utf-8') as f:
@@ -45,13 +51,11 @@ class BotMemory:
     
     @staticmethod
     def save(data):
-        """মেমরি সেভ করো"""
         with open(MEMORY_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
     
     @staticmethod
     def get_user(user_id):
-        """ইউজার মেমরি পাও"""
         memory = BotMemory.load()
         return memory.get(str(user_id), {
             "generations": 0,
@@ -61,17 +65,14 @@ class BotMemory:
     
     @staticmethod
     def update_user(user_id, data):
-        """ইউজার মেমরি আপডেট করো"""
         memory = BotMemory.load()
         memory[str(user_id)] = data
         BotMemory.save(memory)
 
-# Health Check সার্ভার
 class HealthCheckHandler(BaseHTTPRequestHandler):
     """HTTP Health Check"""
     
     def do_GET(self):
-        """GET / এ সাড়া দাও"""
         if self.path == "/":
             self.send_response(200)
             self.send_header("Content-type", "text/plain")
@@ -83,21 +84,19 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             self.end_headers()
     
     def log_message(self, format, *args):
-        """লগ আউটপুট সাইলেন্ট করো"""
         pass
 
 def start_health_check():
-    """Health Check সার্ভার শুরু করো (ব্যাকগ্রাউন্ডে)"""
+    """Health Check সার্ভার"""
     server = HTTPServer(("0.0.0.0", HEALTH_CHECK_PORT), HealthCheckHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     logger.info(f"🏥 health check server listening on 0.0.0.0:{HEALTH_CHECK_PORT}")
 
-# টেলিগ্রাম হ্যান্ডলার
+# Telegram হ্যান্ডলার
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """স্টার্ট কমান্ড — মেইন মেনু"""
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    
+    """স্টার্ট মেনু"""
     keyboard = [
         [
             InlineKeyboardButton("🎨 Image Generate", callback_data="img_mode"),
@@ -128,15 +127,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/start - মেইন মেনু\n"
         "/help - এই মেসেজ\n\n"
         "**ব্যবহার:**\n"
-        "যেকোনো ডিসক্রিপশন পাঠাও, আমি ইমেজ বানাব।\n\n"
-        "**উদাহরণ:**\n"
-        "'একটি নীল আকাশ পাহাড়ের উপর'\n"
-        "'ডিজিটাল আর্ট, নক্ষত্র, স্পেস'",
+        "যেকোনো ডিসক্রিপশন পাঠাও, আমি ইমেজ বানাব।",
         parse_mode="Markdown"
     )
 
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """মেমরি ক্লিয়ার করো"""
+    """মেমরি ক্লিয়ার"""
     user_id = update.message.from_user.id
     user_data = BotMemory.get_user(user_id)
     user_data["generations"] = 0
@@ -156,13 +152,11 @@ async def generate_image(prompt: str, user_id: int, update: Update, context: Con
     )
     
     try:
-        # মেমরি আপডেট করো
         user_data = BotMemory.get_user(user_id)
         user_data["generations"] = user_data.get("generations", 0) + 1
         user_data["last_prompt"] = prompt
         BotMemory.update_user(user_id, user_data)
         
-        # API কল
         headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
         payload = {"inputs": prompt}
         
@@ -172,17 +166,12 @@ async def generate_image(prompt: str, user_id: int, update: Update, context: Con
             error_text = response.text[:150] if response.text else "Unknown error"
             await loading_msg.edit_text(
                 f"❌ **API এরর {response.status_code}**\n\n"
-                f"কারণ:\n"
-                f"• টোকেন ইনভ্যালিড\n"
-                f"• মাসিক কোটা শেষ\n"
-                f"• নেটওয়ার্ক ইস্যু\n\n"
                 f"`{error_text}`",
                 parse_mode="Markdown"
             )
             logger.error(f"API এরর: {error_text}")
             return
         
-        # ইমেজ পাঠাও
         image_bytes = io.BytesIO(response.content)
         await loading_msg.delete()
         await update.message.reply_photo(
@@ -192,13 +181,13 @@ async def generate_image(prompt: str, user_id: int, update: Update, context: Con
         logger.info(f"সফল (ইউজার {user_id})")
         
     except requests.exceptions.Timeout:
-        await loading_msg.edit_text("⏱️ **টাইমআউট** — আবার চেষ্টা করো")
+        await loading_msg.edit_text("⏱️ **টাইমআউট**")
     except Exception as e:
         logger.error(f"এরর: {e}")
         await loading_msg.edit_text(f"❌ **এরর**: `{str(e)[:80]}`", parse_mode="Markdown")
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """ইনলাইন বাটন ক্যালব্যাক"""
+    """বাটন ক্যালব্যাক"""
     query = update.callback_query
     await query.answer()
     
@@ -228,15 +217,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "**কিভাবে ব্যবহার করবে:**\n\n"
             "1. 'Image Generate' ক্লিক করো\n"
             "2. ডিসক্রিপশন লিখো\n"
-            "3. ইমেজ পাবে\n\n"
-            "**টিপস:**\n"
-            "• ডিটেইল প্রম্পট ভালো\n"
-            "• স্টাইল মেনশন করো\n"
-            "• কোয়ালিটি ওয়ার্ড যোগ করো (HD, 4K)"
+            "3. ইমেজ পাবে",
+            parse_mode="Markdown"
         )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """টেক্সট মেসেজ হ্যান্ডল"""
+    """টেক্সট মেসেজ"""
     user_id = update.message.from_user.id
     
     if context.user_data.get('waiting_for_prompt'):
@@ -244,39 +230,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         context.user_data['waiting_for_prompt'] = False
         await generate_image(prompt, user_id, update, context)
     else:
-        # সরাসরি প্রম্পট হিসেবে ট্রিট করো
         prompt = update.message.text
         await generate_image(prompt, user_id, update, context)
 
 async def main():
     """মেইন ফাংশন"""
-    # Health Check স্টার্ট করো
     start_health_check()
     
-    # Telegram Application
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     
-    # হ্যান্ডলার
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("clear", clear_command))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     logger.info("🚀 Waiting for messages… (/start)")
     
-    # Long Polling শুরু করো
     async with app:
         await app.updater.start_polling(
             poll_interval=3.0,
             timeout=30,
             allowed_updates=Update.ALL_TYPES
         )
-        await app.updater.stop()
 
 if __name__ == "__main__":
-    # CallbackQueryHandler ইম্পোর্ট করো
-    from telegram.ext import CallbackQueryHandler
-    
     import asyncio
     asyncio.run(main())
